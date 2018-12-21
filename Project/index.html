@@ -1,0 +1,199 @@
+#include <AFMotor.h> // Подключаем библиотеку для работы с шилдом 
+#include <Servo.h> 
+int i;
+AF_DCMotor motor_1(1);// Подключаем моторы к клеммникам M1
+AF_DCMotor motor_2(2);// Подключаем моторы к клеммникам M2
+AF_DCMotor motor_3(3);// Подключаем моторы к клеммникам M3
+#define PIN_POT A0
+#define PIN_POT1 A1
+
+#define SOUND 1
+#define POTENT 0                 // 1 - используем потенциометр, 0 - используется внутренний источник опорного напряжения 1.1 В
+
+
+#define NUM_LEDS 6      // коэффициент громкости (максимальное равно срднему * этот коэф) (по умолчанию 1.8)
+
+
+
+float RcurrentLevel=0;
+float RsoundLevel=0;
+float RsoundLevel_f;
+int LOW_PASS = 1;
+float SMOOTH = 0.5;   
+float averK = 0.006;
+int maxLevel = 100;
+float MAX_COEF = 1.8;  
+byte Rlenght;
+byte MAX_CH = NUM_LEDS;
+float averageLevel = 100;
+
+long previousMillis = 0;   // здесь будет храниться время последнего изменения состояния светодиода 
+long interval = 20;      // интервал мигания в миллисекундах
+
+#define cbi(sfr, bit) (_SFR_BYTE(sfr) &= ~_BV(bit))
+#define sbi(sfr, bit) (_SFR_BYTE(sfr) |= _BV(bit))
+// дисплей
+#include "U8glib.h"
+U8GLIB_SSD1306_128X32 u8g(U8G_I2C_OPT_NONE);  // I2C / TWI ////SCL SDA
+
+
+int BRHT=200;
+int BRHT_test=200;
+int timetest=50;//milis
+
+
+
+void setup() {
+//Serial.begin(19200);
+motor_1.setSpeed(255);// Задаем максимальную скорость вращения моторов
+motor_1.run(RELEASE);
+
+test();
+
+if (POTENT) analogReference(EXTERNAL);
+  else
+#if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
+    analogReference(INTERNAL1V1);
+#else
+    analogReference(INTERNAL);
+#endif
+
+  // жуткая магия, меняем частоту оцифровки до 18 кГц
+  // команды на ебучем ассемблере, даже не спрашивайте, как это работает
+  // поднимаем частоту опроса аналогового порта до 38.4 кГц, по теореме
+  // Котельникова (Найквиста) частота дискретизации будет 19.2 кГц
+  // http://yaab-arduino.blogspot.ru/2015/02/fast-sampling-from-analog-input.html
+  sbi(ADCSRA, ADPS2);
+  cbi(ADCSRA, ADPS1);
+  sbi(ADCSRA, ADPS0);
+}
+
+void loop() {
+Audio();
+}
+        
+void Audio(){
+   // put your main code here, to run repeatedly:
+for (byte i = 0; i < 128; i ++) {                                 // делаем 100 измерений
+    RcurrentLevel = analogRead(SOUND); 
+    delayMicroseconds(10);// ищем максимальное
+    if (RsoundLevel < RcurrentLevel) RsoundLevel = RcurrentLevel; 
+}
+    // фильтруем по нижнему порогу шумов
+    RsoundLevel = map(RsoundLevel, 50, 1023, 0, 500); 
+    // ограничиваем диапазон
+    RsoundLevel = constrain(RsoundLevel, 0, 500);
+    // фильтр
+    RsoundLevel_f = RsoundLevel * SMOOTH + RsoundLevel_f * (1 - SMOOTH);
+    if(RsoundLevel_f>5){
+        averageLevel = (float)(RsoundLevel_f + RsoundLevel_f) / 2 * averK + averageLevel * (1 - averK);
+        // принимаем максимальную громкость шкалы как среднюю, умноженную на некоторый коэффициент MAX_COEF
+        maxLevel = (float)averageLevel * MAX_COEF;
+        int level =  map(RsoundLevel_f, 0, maxLevel, 0, MAX_CH);
+        level = constrain(level, 0, MAX_CH);
+        //Serial.print("$");
+        //Serial.println(level);
+        //Serial.print(";");
+     Leds(level);
+    }
+  }
+  
+void Leds(int level){
+//Serial.println(level);
+ 
+ switch(level)
+  {
+        case 1:
+motor_1.run(FORWARD); // Задаем движение вперед
+motor_1.setSpeed(BRHT); // Задаем скорость движения
+      break;
+        case 2:
+motor_1.run(BACKWARD); // Задаем движение вперед
+motor_1.setSpeed(BRHT); // Задаем скорость движения
+      break;
+        case 3:
+motor_2.run(FORWARD); // Задаем движение вперед
+motor_2.setSpeed(BRHT); // Задаем скорость движения
+      break;
+        case 4:
+motor_2.run(BACKWARD); // Задаем движение вперед
+motor_2.setSpeed(BRHT); // Задаем скорость движения
+      break;
+        case 5:
+motor_3.run(BACKWARD); // Задаем движение вперед
+motor_3.setSpeed(BRHT); // Задаем скорость движения
+      break;
+      case 6:
+motor_3.run(FORWARD); // Задаем движение вперед
+motor_3.setSpeed(BRHT); // Задаем скорость движения
+      break;
+    }
+    
+    if (millis() - previousMillis > interval) {
+    previousMillis = millis();   // запоминаем текущее время
+    motor_1.run(RELEASE); // 
+    motor_2.run(RELEASE); // 
+    motor_3.run(RELEASE); // 
+  }  
+
+}
+void test(){
+for(int i=0;i<5;i++){
+  motor_1.run(FORWARD); // Задаем движение вперед
+motor_1.setSpeed(BRHT_test); // Задаем скорость движения
+delay(timetest);
+motor_1.run(RELEASE); // 
+ 
+motor_1.run(BACKWARD); // Задаем движение вперед
+motor_1.setSpeed(BRHT_test); // Задаем скорость движения
+delay(timetest);
+motor_1.run(RELEASE); //  
+
+motor_2.run(BACKWARD); // Задаем движение вперед
+motor_2.setSpeed(BRHT_test); // Задаем скорость движения
+delay(timetest);
+motor_2.run(RELEASE); //  
+
+motor_2.run(FORWARD); // Задаем движение вперед
+motor_2.setSpeed(BRHT_test); // Задаем скорость движения
+delay(timetest);
+
+motor_2.run(RELEASE); //  
+
+motor_3.run(BACKWARD); // Задаем движение вперед
+motor_3.setSpeed(BRHT_test); // Задаем скорость движения
+delay(timetest);
+motor_3.run(RELEASE); //  
+
+motor_3.run(FORWARD); // Задаем движение вперед
+motor_3.setSpeed(BRHT_test); // Задаем скорость движения
+delay(timetest);
+
+////////////////////////////////////////////////////////////////////////////////////////
+motor_3.run(BACKWARD); // Задаем движение вперед
+motor_3.setSpeed(BRHT_test); // Задаем скорость движения
+delay(timetest);
+motor_3.run(RELEASE); //  
+
+motor_2.run(FORWARD); // Задаем движение вперед
+motor_2.setSpeed(BRHT_test); // Задаем скорость движения
+delay(timetest);
+
+motor_2.run(RELEASE); // 
+
+motor_2.run(BACKWARD); // Задаем движение вперед
+motor_2.setSpeed(BRHT_test); // Задаем скорость движения
+delay(timetest);
+motor_2.run(RELEASE); // 
+
+motor_1.run(BACKWARD); // Задаем движение вперед
+motor_1.setSpeed(BRHT_test); // Задаем скорость движения
+delay(timetest);
+motor_1.run(RELEASE); // 
+
+motor_1.run(FORWARD); // Задаем движение вперед
+motor_1.setSpeed(BRHT_test); // Задаем скорость движения
+delay(timetest);
+motor_1.run(RELEASE); // 
+  }
+  }
